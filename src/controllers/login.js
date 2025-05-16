@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { passport } = require('../middlewares/auth');
-
+const {homepagePath,loginPath} = require('../config');
 class LoginController {
 homepagePath;
 loginPath;
@@ -14,7 +14,7 @@ loginPath;
             router.get(
               '/github/callback',
               passport.authenticate('github', {
-                failureRedirect: this.loginPath,
+                failureRedirect: loginPath,
               }),
               this.getGithubCallback
             );
@@ -23,17 +23,16 @@ loginPath;
 
   post = (req, res) => {
     req.session.logined = true;
-    res.redirect(this.homepagePath);
+    res.redirect(homepagePath);
   };
     getGithubCallback = (req, res) => {
         req.session.logined = true;
-        res.redirect(this.homepagePath);
+        res.redirect(homepagePath);
       };
     }
 
 
-module.exports = async (homepagePath = '/', loginPath = '/login.html') => {
+module.exports = async () => {
     const c = new LoginController();
-    Object.assign(c, { homepagePath, loginPath });
     return await c.init();
   };

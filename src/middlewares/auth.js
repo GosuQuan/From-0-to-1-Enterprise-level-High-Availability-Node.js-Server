@@ -1,15 +1,10 @@
 // src/middlewares/auth.js
 const passport = require('passport');
 const { Strategy: GithubStrategy } = require('passport-github');
-
-const GITHUB_STRATEGY_OPTIONS = {
-  clientID: 'Ov23lif61cbVjaVk0qTC',
-  clientSecret: '3357b426f9aaf36fb467abe2065351d4d6f97841',
-  callbackURL: 'http://localhost:9000/api/login/github/callback',
-};
+const { githubStrategyOptions } = require('../config');
 
 const githubStrategy = new GithubStrategy(
-  GITHUB_STRATEGY_OPTIONS,
+  githubStrategyOptions,
   (accessToken, refreshToken, profile, done) => {
     /**
      * 根据 profile 查找或新建 user 信息
