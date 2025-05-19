@@ -6,6 +6,7 @@
     "start": "node src/server.js",
     "start:prod": "cross-env NODE_ENV=production node -r ./scripts/env src/server.js",
     "build:yup": "rollup node_modules/yup -o src/moulds/yup.js -p @rollup/plugin-node-resolve,@rollup/plugin-commonjs,rollup-plugin-terser -f umd -n 'yup'",
+    "test": "echo \"No tests specified yet\" && exit 0",
     "sequelize": "sequelize",
     "sequelize:prod": "cross-env NODE_ENV=production sequelize"
   },
