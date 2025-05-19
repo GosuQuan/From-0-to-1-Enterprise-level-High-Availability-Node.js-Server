@@ -42,7 +42,7 @@ jobs:
       uses: docker/build-push-action@v3
       with:
         push: true
-        tags: your-dockerhub-username/your-app-name:latest
+        tags: gosuquan/node-test:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
     
@@ -58,15 +58,15 @@ jobs:
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          docker pull your-dockerhub-username/your-app-name:latest
-          docker stop your-app-name || true
-          docker rm your-app-name || true
+          docker pull gosuquan/node-test:latest
+          docker stop node-test || true
+          docker rm node-test || true
           docker run -d \
-            --name your-app-name \
+            --name node-test \
             --restart unless-stopped \
             -p 3000:3000 \
             -e NODE_ENV=production \
             -e DB_HOST=${{ secrets.DB_HOST }} \
             -e DB_USER=${{ secrets.DB_USER }} \
             -e DB_PASS=${{ secrets.DB_PASS }} \
-            your-dockerhub-username/your-app-name:latest
+            gosuquan/node-test:latest
