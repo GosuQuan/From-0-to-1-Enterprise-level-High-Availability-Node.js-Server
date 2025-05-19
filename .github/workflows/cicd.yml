@@ -5,7 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  # 每周运行一次安全扫描
+  # Weekly security scan
   schedule:
     - cron: '0 0 * * 0'
 
@@ -53,9 +53,9 @@ jobs:
     - name: Run tests
       run: npm test
 
-    # 测试覆盖率报告
+    # Test coverage report
     - name: Generate test coverage report
-      run: npm test -- --coverage || echo "警告: 覆盖率报告生成失败，但允许流程继续"
+      run: npm test -- --coverage || echo "WARNING - Coverage report generation failed but workflow continues"
 
   security-scan:
     runs-on: ubuntu-latest
@@ -63,9 +63,9 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Run npm audit
-      run: npm audit --production || echo "警告: 安全扫描发现问题，但允许流程继续"
+      run: npm audit --production || echo "WARNING - Security scan found issues but workflow continues"
 
-    # 使用Snyk进行依赖包安全扫描 (可选)
+    # Optional: Use Snyk for dependency security scanning
     - name: Run Snyk to check for vulnerabilities
       uses: snyk/actions/node@master
       continue-on-error: true
@@ -90,7 +90,7 @@ jobs:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-    # 生成版本标签
+    # Generate version tag
     - name: Generate version tag
       id: version
       run: |
@@ -120,14 +120,14 @@ jobs:
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          # 拉取最新的Docker镜像
+          # Pull latest Docker image
           docker pull gosuquan/node-test:latest
           
-          # 优雅停止旧容器
+          # Gracefully stop old container
           docker stop node-test || true
           docker rm node-test || true
           
-          # 启动新容器
+          # Start new container
           docker run -d \
             --name node-test \
             --restart unless-stopped \
@@ -142,11 +142,11 @@ jobs:
             --health-retries=3 \
             gosuquan/node-test:latest
           
-          # 检查容器是否成功运行
+          # Check if container is running successfully
           sleep 10
           docker ps | grep node-test
           
-          # 清理旧镜像
+          # Clean up old images
           docker image prune -af --filter "until=24h"
 
   notify:
@@ -160,5 +160,5 @@ jobs:
         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         SLACK_CHANNEL: deployments
         SLACK_COLOR: ${{ needs.deploy.result == 'success' && 'good' || 'danger' }}
-        SLACK_TITLE: "部署状态: ${{ needs.deploy.result == 'success' && '成功 ✅' || '失败 ❌' }}"
-        SLACK_MESSAGE: "应用已部署到生产环境 - 版本: $(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
+        SLACK_TITLE: "Deployment Status: ${{ needs.deploy.result == 'success' && 'SUCCESS ✅' || 'FAILED ❌' }}"
+        SLACK_MESSAGE: "Application deployed to production - Version: $(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
