@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "body-parser": "^2.2.0",
+    "bunyan": "^1.8.15",
     "connect-session-sequelize": "^7.1.7",
     "cookie-parser": "^1.4.7",
     "csurf": "^1.11.0",
@@ -23,11 +24,14 @@
     "express-session": "^1.18.1",
     "helmet": "^8.1.0",
     "lodash.merge": "^4.6.2",
+    "morgan": "^1.10.0",
+    "on-finished": "^2.4.1",
     "passport": "^0.7.0",
     "passport-github": "^1.1.0",
     "sequelize": "^6.37.7",
     "sequelize-cli": "^6.6.3",
     "sqlite3": "^5.1.7",
+    "uuid": "^11.1.0",
     "yup": "^1.6.1"
   },
   "devDependencies": {
