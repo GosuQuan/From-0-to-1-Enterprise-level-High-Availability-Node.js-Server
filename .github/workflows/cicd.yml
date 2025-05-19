@@ -30,7 +30,7 @@ jobs:
       run: npm ci
 
     - name: Lint code
-      run: npm run lint || echo "警告: Lint检查失败，但允许流程继续"
+      run: npm run lint || echo "WARNING - Lint check failed but workflow continues"
 
   test:
     needs: lint
