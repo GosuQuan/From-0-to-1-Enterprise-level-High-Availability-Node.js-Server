@@ -5,19 +5,23 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  # 每周运行一次安全扫描
+  schedule:
+    - cron: '0 0 * * 0'
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
 
     - name: Use Node.js 18
       uses: actions/setup-node@v3
       with:
         node-version: 18
-        cache: 'npm' # ✅ 启用 npm 缓存
+        cache: 'npm'
 
     - name: Set registry to faster mirror
       run: npm config set registry https://registry.npmmirror.com
@@ -25,14 +29,12 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Run tests
-      run: npm test
+    - name: Lint code
+      run: npm run lint || echo "警告: Lint检查失败，但允许流程继续"
 
-  build-and-push:
-    needs: test
+  test:
+    needs: lint
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
     steps:
     - uses: actions/checkout@v3
 
@@ -48,10 +50,115 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Run tests
+      run: npm test
+
+    # 测试覆盖率报告
+    - name: Generate test coverage report
+      run: npm test -- --coverage || echo "警告: 覆盖率报告生成失败，但允许流程继续"
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Run npm audit
+      run: npm audit --production || echo "警告: 安全扫描发现问题，但允许流程继续"
+
+    # 使用Snyk进行依赖包安全扫描 (可选)
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/node@master
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+
+  build-and-push:
+    needs: [test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
+    # 生成版本标签
+    - name: Generate version tag
+      id: version
+      run: |
+        echo "::set-output name=tag::$(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
+
     - name: Build and push
+      uses: docker/build-push-action@v3
+      with:
+        push: true
+        tags: |
+          gosuquan/node-test:latest
+          gosuquan/node-test:${{ steps.version.outputs.tag }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          NODE_ENV=production
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Deploy to production
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          # 拉取最新的Docker镜像
+          docker pull gosuquan/node-test:latest
+          
+          # 优雅停止旧容器
+          docker stop node-test || true
+          docker rm node-test || true
+          
+          # 启动新容器
+          docker run -d \
+            --name node-test \
+            --restart unless-stopped \
+            -p 3000:3000 \
+            -e NODE_ENV=production \
+            -e DB_HOST=${{ secrets.DB_HOST }} \
+            -e DB_USER=${{ secrets.DB_USER }} \
+            -e DB_PASS=${{ secrets.DB_PASS }} \
+            -v /var/log/node-app:/usr/src/app/logs \
+            --health-cmd="curl -f http://localhost:3000/health || exit 1" \
+            --health-interval=30s \
+            --health-retries=3 \
+            gosuquan/node-test:latest
+          
+          # 检查容器是否成功运行
+          sleep 10
+          docker ps | grep node-test
+          
+          # 清理旧镜像
+          docker image prune -af --filter "until=24h"
+
+  notify:
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Notify deployment status
+      uses: rtCamp/action-slack-notify@v2
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        SLACK_CHANNEL: deployments
+        SLACK_COLOR: ${{ needs.deploy.result == 'success' && 'good' || 'danger' }}
+        SLACK_TITLE: "部署状态: ${{ needs.deploy.result == 'success' && '成功 ✅' || '失败 ❌' }}"
+        SLACK_MESSAGE: "应用已部署到生产环境 - 版本: $(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
