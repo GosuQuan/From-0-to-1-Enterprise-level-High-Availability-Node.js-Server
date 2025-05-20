@@ -93,11 +93,11 @@ jobs:
             sudo usermod -aG docker $USER
           fi
 
-          # 配置更稳定的阿里云镜像源
+          # 配置更稳定的镜像源
           echo "配置 Docker 镜像加速..."
           sudo mkdir -p /etc/docker
           echo '{
-            "registry-mirrors": ["https://<your-aliyun-mirror-id>.mirror.aliyuncs.com"],
+            "registry-mirrors": ["https://registry.cn-hangzhou.aliyuncs.com", "https://hub-mirror.c.163.com", "https://mirror.baidubce.com"],
             "dns": ["8.8.8.8", "114.114.114.114"]
           }' | sudo tee /etc/docker/daemon.json
           
@@ -120,43 +120,39 @@ jobs:
           # 构建镜像（添加重试机制）
           echo "开始构建 Docker 镜像..."
           if ! docker build \
-            --platform linux/amd64 \
+            --network=host \
             --no-cache \
-            --build-arg HTTP_PROXY=$HTTP_PROXY \
-            --build-arg HTTPS_PROXY=$HTTPS_PROXY \
             -t gosuquan/node-test:latest .; then
             
-            echo "Docker 构建失败，尝试使用国内源重新构建..."
-            # 使用替代 Dockerfile（临时添加镜像源）
-            cat Dockerfile | sed 's/FROM node:18-alpine/FROM registry.cn-hangzhou.aliyuncs.com\/library\/node:18-alpine/' > Dockerfile.tmp
-            docker build -f Dockerfile.tmp -t gosuquan/node-test:latest .
-            rm Dockerfile.tmp
+            echo "Docker 构建失败，跳过 Docker 部署..."
+            # 设置标志，直接进入 Node.js 部署模式
+            SKIP_DOCKER=true
           fi
 
-          # 清理旧容器
-          echo "清理旧容器..."
-          docker stop node-test || true
-          docker rm node-test || true
+          # 只有当 SKIP_DOCKER 不为 true 时才继续 Docker 部署
+          if [ "$SKIP_DOCKER" != "true" ]; then
+            # 清理旧容器
+            echo "清理旧容器..."
+            docker stop node-test || true
+            docker rm node-test || true
 
-          # 运行新容器（添加健康检查）
-          echo "启动新容器..."
-          docker run -d \
-            --name node-test \
-            --restart unless-stopped \
-            --health-cmd "curl --fail http://localhost:3000/health || exit 1" \
-            --health-interval 30s \
-            --health-retries 3 \
-            -p 3000:3000 \
-            -e NODE_ENV=production \
-            -e DB_HOST=${{ secrets.DB_HOST }} \
-            gosuquan/node-test:latest
+            # 运行新容器（简化健康检查）
+            echo "启动新容器..."
+            docker run -d \
+              --name node-test \
+              --restart unless-stopped \
+              -p 3000:3000 \
+              -e NODE_ENV=production \
+              -e DB_HOST=${{ secrets.DB_HOST }} \
+              gosuquan/node-test:latest
+          fi
 
-          # 等待容器健康状态
-          echo "等待容器启动..."
-          timeout 120s bash -c 'until [ $(docker inspect --format "{{.State.Health.Status}}" node-test) == "healthy" ]; do sleep 5; done' || true
-
-          # 回退方案：如果 Docker 失败则尝试 Node 直接运行
-          if ! docker ps | grep -q node-test; then
+          # 检查容器是否运行
+          echo "检查容器状态..."
+          if docker ps | grep -q node-test; then
+            echo "Docker 容器成功运行！"
+          else
+            echo "Docker 容器未运行，切换到 Node.js 直接运行模式"
             echo "=== Docker 部署失败，尝试 Node 直接运行 ==="
             
             # 确保 Node.js 环境
