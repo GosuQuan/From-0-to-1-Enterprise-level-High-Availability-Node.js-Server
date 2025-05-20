@@ -71,125 +71,124 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    
-   steps:
-  - name: SSH into server and deploy
-    uses: appleboy/ssh-action@master
-    with:
-      host: ${{ secrets.SERVER_HOST }}
-      username: ${{ secrets.SERVER_USERNAME }}
-      key: ${{ secrets.SERVER_SSH_KEY }}
-      script: |-
-        # 检查 Docker 是否安装
-        if ! command -v docker &> /dev/null; then
-          echo "Docker 未安装，正在安装..."
-          # 安装 Docker
-          sudo apt-get update
-          sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-          sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-          sudo apt-get update
-          sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-          # 将当前用户添加到 docker 组（无需 newgrp）
-          sudo usermod -aG docker $USER
-        fi
+    steps:
+    - name: SSH into server and deploy
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |-
+          # 检查 Docker 是否安装
+          if ! command -v docker &> /dev/null; then
+            echo "Docker 未安装，正在安装..."
+            # 安装 Docker
+            sudo apt-get update
+            sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+            sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            sudo apt-get update
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+            # 将当前用户添加到 docker 组（无需 newgrp）
+            sudo usermod -aG docker $USER
+          fi
 
-        # 配置更稳定的阿里云镜像源
-        echo "配置 Docker 镜像加速..."
-        sudo mkdir -p /etc/docker
-        echo '{
-          "registry-mirrors": ["https://<your-aliyun-mirror-id>.mirror.aliyuncs.com"],
-          "dns": ["8.8.8.8", "114.114.114.114"]
-        }' | sudo tee /etc/docker/daemon.json
-        
-        # 重启 Docker 服务并等待完全启动
-        sudo systemctl daemon-reload
-        sudo systemctl restart docker
-        sleep 10  # 确保 Docker 服务完全启动
-
-        # 创建应用目录
-        mkdir -p ~/app
-        cd ~/app
-
-        # 优先尝试 Docker 部署（更可靠）
-        echo "=== 开始 Docker 部署流程 ==="
-        
-        # 显式拉取基础镜像（解决超时问题）
-        echo "预拉取 Node.js 基础镜像..."
-        docker pull --platform linux/amd64 node:18-alpine || true
-
-        # 构建镜像（添加重试机制）
-        echo "开始构建 Docker 镜像..."
-        if ! docker build \
-          --platform linux/amd64 \
-          --no-cache \
-          --build-arg HTTP_PROXY=$HTTP_PROXY \
-          --build-arg HTTPS_PROXY=$HTTPS_PROXY \
-          -t gosuquan/node-test:latest .; then
+          # 配置更稳定的阿里云镜像源
+          echo "配置 Docker 镜像加速..."
+          sudo mkdir -p /etc/docker
+          echo '{
+            "registry-mirrors": ["https://<your-aliyun-mirror-id>.mirror.aliyuncs.com"],
+            "dns": ["8.8.8.8", "114.114.114.114"]
+          }' | sudo tee /etc/docker/daemon.json
           
-          echo "Docker 构建失败，尝试使用国内源重新构建..."
-          # 使用替代 Dockerfile（临时添加镜像源）
-          cat Dockerfile | sed 's/FROM node:18-alpine/FROM registry.cn-hangzhou.aliyuncs.com\/library\/node:18-alpine/' > Dockerfile.tmp
-          docker build -f Dockerfile.tmp -t gosuquan/node-test:latest .
-          rm Dockerfile.tmp
-        fi
+          # 重启 Docker 服务并等待完全启动
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+          sleep 10  # 确保 Docker 服务完全启动
 
-        # 清理旧容器
-        echo "清理旧容器..."
-        docker stop node-test || true
-        docker rm node-test || true
+          # 创建应用目录
+          mkdir -p ~/app
+          cd ~/app
 
-        # 运行新容器（添加健康检查）
-        echo "启动新容器..."
-        docker run -d \
-          --name node-test \
-          --restart unless-stopped \
-          --health-cmd "curl --fail http://localhost:3000/health || exit 1" \
-          --health-interval 30s \
-          --health-retries 3 \
-          -p 3000:3000 \
-          -e NODE_ENV=production \
-          -e DB_HOST=${{ secrets.DB_HOST }} \
-          gosuquan/node-test:latest
-
-        # 等待容器健康状态
-        echo "等待容器启动..."
-        timeout 120s bash -c 'until [ $(docker inspect --format "{{.State.Health.Status}}" node-test) == "healthy" ]; do sleep 5; done' || true
-
-        # 回退方案：如果 Docker 失败则尝试 Node 直接运行
-        if ! docker ps | grep -q node-test; then
-          echo "=== Docker 部署失败，尝试 Node 直接运行 ==="
+          # 优先尝试 Docker 部署（更可靠）
+          echo "=== 开始 Docker 部署流程 ==="
           
-          # 确保 Node.js 环境
-          if ! command -v node &> /dev/null; then
-            echo "正在安装 Node.js..."
-            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-            sudo apt-get install -y nodejs
+          # 显式拉取基础镜像（解决超时问题）
+          echo "预拉取 Node.js 基础镜像..."
+          docker pull --platform linux/amd64 node:18-alpine || true
+
+          # 构建镜像（添加重试机制）
+          echo "开始构建 Docker 镜像..."
+          if ! docker build \
+            --platform linux/amd64 \
+            --no-cache \
+            --build-arg HTTP_PROXY=$HTTP_PROXY \
+            --build-arg HTTPS_PROXY=$HTTPS_PROXY \
+            -t gosuquan/node-test:latest .; then
+            
+            echo "Docker 构建失败，尝试使用国内源重新构建..."
+            # 使用替代 Dockerfile（临时添加镜像源）
+            cat Dockerfile | sed 's/FROM node:18-alpine/FROM registry.cn-hangzhou.aliyuncs.com\/library\/node:18-alpine/' > Dockerfile.tmp
+            docker build -f Dockerfile.tmp -t gosuquan/node-test:latest .
+            rm Dockerfile.tmp
           fi
 
-          # 安装 pnpm
-          if ! command -v pnpm &> /dev/null; then
-            echo "安装 pnpm..."
-            npm install -g pnpm --registry=https://registry.npmmirror.com
+          # 清理旧容器
+          echo "清理旧容器..."
+          docker stop node-test || true
+          docker rm node-test || true
+
+          # 运行新容器（添加健康检查）
+          echo "启动新容器..."
+          docker run -d \
+            --name node-test \
+            --restart unless-stopped \
+            --health-cmd "curl --fail http://localhost:3000/health || exit 1" \
+            --health-interval 30s \
+            --health-retries 3 \
+            -p 3000:3000 \
+            -e NODE_ENV=production \
+            -e DB_HOST=${{ secrets.DB_HOST }} \
+            gosuquan/node-test:latest
+
+          # 等待容器健康状态
+          echo "等待容器启动..."
+          timeout 120s bash -c 'until [ $(docker inspect --format "{{.State.Health.Status}}" node-test) == "healthy" ]; do sleep 5; done' || true
+
+          # 回退方案：如果 Docker 失败则尝试 Node 直接运行
+          if ! docker ps | grep -q node-test; then
+            echo "=== Docker 部署失败，尝试 Node 直接运行 ==="
+            
+            # 确保 Node.js 环境
+            if ! command -v node &> /dev/null; then
+              echo "正在安装 Node.js..."
+              curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+
+            # 安装 pnpm
+            if ! command -v pnpm &> /dev/null; then
+              echo "安装 pnpm..."
+              npm install -g pnpm --registry=https://registry.npmmirror.com
+            fi
+
+            # 安装依赖（使用国内镜像源）
+            echo "安装依赖..."
+            pnpm config set registry https://registry.npmmirror.com
+            pnpm install --no-frozen-lockfile --verbose
+
+            # PM2 进程管理
+            if ! command -v pm2 &> /dev/null; then
+              npm install -g pm2
+            fi
+
+            # 停止旧进程并启动
+            pm2 delete node-test || true
+            pm2 start src/index.js --name node-test --update-env
+            pm2 save
+            pm2 startup | grep -v sudo | bash
           fi
 
-          # 安装依赖（使用国内镜像源）
-          echo "安装依赖..."
-          pnpm config set registry https://registry.npmmirror.com
-          pnpm install --no-frozen-lockfile --verbose
-
-          # PM2 进程管理
-          if ! command -v pm2 &> /dev/null; then
-            npm install -g pm2
-          fi
-
-          # 停止旧进程并启动
-          pm2 delete node-test || true
-          pm2 start src/index.js --name node-test --update-env
-          pm2 save
-          pm2 startup | grep -v sudo | bash
-        fi
-
-        echo "=== 部署验证 ==="
-        docker ps || pm2 status
-        curl -I http://localhost:3000 || true
+          echo "=== 部署验证 ==="
+          docker ps || pm2 status
+          curl -I http://localhost:3000 || true
