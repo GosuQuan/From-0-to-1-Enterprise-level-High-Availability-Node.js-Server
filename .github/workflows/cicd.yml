@@ -80,6 +80,23 @@ jobs:
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
+          # 检查 Docker 是否安装
+          if ! command -v docker &> /dev/null; then
+            echo "Docker 未安装，正在安装..."
+            # 安装 Docker
+            sudo apt-get update
+            sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+            sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            sudo apt-get update
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+            # 将当前用户添加到 docker 组
+            sudo usermod -aG docker $USER
+            # 重新加载 shell 以使用户组变更生效
+            newgrp docker
+          fi
+          
+          # 部署应用
           docker pull gosuquan/node-test:latest
           docker stop node-test || true
           docker rm node-test || true
