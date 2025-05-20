@@ -104,23 +104,41 @@ jobs:
             mkdir -p ~/app
             cd ~/app
             
-            # 找到最新的 tar 文件
-            LATEST_TAR=$(ls -t node-test-*.tar 2>/dev/null | head -n 1)
+            # 列出目录中所有文件（调试用）
+            echo "当前目录内容:"
+            ls -la
             
-            # 检查是否找到 tar 文件
-            if [ -z "$LATEST_TAR" ]; then
-              echo '错误: 找不到 node-test-*.tar 文件！'
-              ls -la ~/app/
+            # 先检查新格式文件 (node-test-*.tar)
+            echo "尝试查找新格式 tar 文件..."
+            NEW_FORMAT_TAR=$(ls -t node-test-*.tar 2>/dev/null | head -n 1 || echo "")
+            
+            # 再检查旧格式文件 (node-test.tar)
+            echo "尝试查找旧格式 tar 文件..."
+            if [ -f "node-test.tar" ]; then
+              OLD_FORMAT_TAR="node-test.tar"
+              echo "找到旧格式 tar 文件: $OLD_FORMAT_TAR"
+            else
+              OLD_FORMAT_TAR=""
+              echo "未找到旧格式 tar 文件"
+            fi
+            
+            # 决定使用哪个 tar 文件
+            if [ ! -z "$NEW_FORMAT_TAR" ]; then
+              LATEST_TAR="$NEW_FORMAT_TAR"
+              echo "使用新格式 tar 文件: $LATEST_TAR"
+            elif [ ! -z "$OLD_FORMAT_TAR" ]; then
+              LATEST_TAR="$OLD_FORMAT_TAR"
+              echo "使用旧格式 tar 文件: $LATEST_TAR"
+            else
+              echo "错误: 找不到任何 tar 文件！"
               exit 1
             fi
             
-            echo "找到最新的 tar 文件: $LATEST_TAR"
-            
-            # 检查文件类型
+            # 再次确认文件存在且是普通文件
             if [ ! -f "$LATEST_TAR" ]; then
-              echo "错误: $LATEST_TAR 不是普通文件！实际类型如下:"
-              ls -l "$LATEST_TAR"
-              file "$LATEST_TAR"
+              echo "错误: $LATEST_TAR 不是普通文件或不存在！实际情况如下:"
+              ls -la "$LATEST_TAR" 2>&1 || echo "文件不存在"
+              file "$LATEST_TAR" 2>&1 || echo "无法获取文件类型"
               exit 1
             fi
             
