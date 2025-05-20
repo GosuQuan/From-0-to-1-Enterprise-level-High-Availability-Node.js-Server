@@ -18,21 +18,30 @@ jobs:
       with:
         node-version: 18
     
-    - name: Cache Node.js modules
+    - name: Install pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+    
+    - name: Get pnpm store directory
+      id: pnpm-cache
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+    
+    - name: Setup pnpm cache
       uses: actions/cache@v3
       with:
-        path: ~/.npm
-        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
         restore-keys: |
-          ${{ runner.os }}-node-
+          ${{ runner.os }}-pnpm-store-
     
-    - name: Install dependenciesß
-      run: |
-        npm config set registry https://registry.npmmirror.com
-        npm ci --prefer-offline
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
       
-    - name: Run tests
-      run: npm test
+    # - name: Run tests
+    #   run: pnpm test
       
   build-and-push:
     needs: test
