@@ -23,8 +23,8 @@ FROM node:18-alpine
 
 WORKDIR /usr/src/app
 
-# 安装pnpm
-RUN npm install -g pnpm
+# 安装pnpm和必要的全局依赖
+RUN npm install -g pnpm cross-env
 
 # 设置环境变量
 ENV NODE_ENV=production
