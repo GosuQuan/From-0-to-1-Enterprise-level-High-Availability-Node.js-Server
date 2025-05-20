@@ -105,22 +105,66 @@ jobs:
           sudo systemctl daemon-reload
           sudo systemctl restart docker
           
-          # 部署应用，使用更简单的方式处理网络问题
-          echo "拉取 Docker 镜像..."
-          # 设置更长的超时时间并使用国内镜像
-          docker pull registry.cn-hangzhou.aliyuncs.com/gosuquan/node-test:latest || docker pull gosuquan/node-test:latest || true
+          # 离线部署方案，处理完全无法连接互联网的情况
+          echo "准备部署应用..."
           
-          # 如果拉取失败，使用本地镜像或构建新镜像
-          if ! docker images | grep -q 'gosuquan/node-test'; then
-            echo "镜像拉取失败，使用本地构建..."
-            mkdir -p ~/app && cd ~/app
-            # 如果已有代码，尝试更新，否则克隆
-            if [ -d ".git" ]; then
-              git pull
-            else
-              git clone https://github.com/GosuQuan/From-0-to-1-Enterprise-level-High-Availability-Node.js-Server.git .
+          # 创建应用目录
+          mkdir -p ~/app
+          
+          # 使用 scp 将当前构建的代码直接传输到服务器
+          # 这一步在 GitHub Actions 中已经完成，因为我们已经在服务器上
+          
+          # 检查是否有本地镜像
+          if docker images | grep -q 'gosuquan/node-test'; then
+            echo "找到现有镜像，将使用它来部署..."
+          else
+            echo "未找到现有镜像，尝试使用 Dockerfile 直接运行应用..."
+            
+            # 如果无法构建 Docker 镜像，就直接使用 Node.js 运行应用
+            if command -v node &> /dev/null; then
+              echo "找到 Node.js，将直接运行应用..."
+              # 检查是否已安装 pnpm
+              if ! command -v pnpm &> /dev/null; then
+                echo "安装 pnpm..."
+                npm install -g pnpm
+              fi
+              
+              # 检查是否已安装 PM2
+              if ! command -v pm2 &> /dev/null; then
+                echo "安装 PM2..."
+                npm install -g pm2
+              fi
+              
+              # 如果有代码仓库，使用它
+              cd ~/app
+              if [ -d "src" ]; then
+                echo "安装依赖..."
+                pnpm install --no-frozen-lockfile
+                
+                # 停止现有进程
+                pm2 stop node-test || true
+                
+                # 启动应用
+                echo "启动应用..."
+                NODE_ENV=production pm2 start src/index.js --name node-test
+                
+                # 返回成功
+                echo "应用直接启动成功！"
+                pm2 status
+                exit 0
+              fi
             fi
-            docker build -t gosuquan/node-test:latest .
+            
+            # 如果上面的方法都失败，尝试使用本地 Dockerfile 构建
+            cd ~/app
+            if [ -f "Dockerfile" ]; then
+              echo "尝试使用本地 Dockerfile 构建..."
+              # 使用 --network=host 可能帮助解决一些网络问题
+              docker build --network=host -t gosuquan/node-test:latest .
+            else
+              echo "未找到 Dockerfile，无法构建镜像。"
+              exit 1
+            fi
           fi
           
           echo "停止并移除旧容器..."
