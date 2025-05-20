@@ -92,10 +92,15 @@ jobs:
             # 进入应用目录
             mkdir -p ~/app
             cd ~/app
-            # 检查 node-test.tar 必须为文件
+            # 检查 node-test.tar 必须为普通文件
             if [ ! -f node-test.tar ]; then
-              echo '错误: node-test.tar 不是文件！'; ls -l node-test.tar; exit 1;
+              echo '错误: node-test.tar 不是普通文件！实际类型如下：'
+              ls -l node-test.tar
+              file node-test.tar
+              exit 1
             fi
+            echo 'node-test.tar 文件类型如下：'
+            ls -l node-test.tar
             file node-test.tar
             # 导入镜像
             docker load -i node-test.tar
