@@ -5,144 +5,70 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  # Weekly security scan
-  schedule:
-    - cron: '0 0 * * 0'
 
 jobs:
-  # lint job commented out to speed up workflow
-  # lint:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v3
-  #     with:
-  #       fetch-depth: 0
-  #
-  #   - name: Use Node.js 18
-  #     uses: actions/setup-node@v3
-  #     with:
-  #       node-version: 18
-  #       cache: 'npm'
-  #
-  #   - name: Set registry to faster mirror
-  #     run: npm config set registry https://registry.npmmirror.com
-  #
-  #   - name: Install dependencies
-  #     run: npm ci
-  #
-  #   - name: Lint code
-  #     run: npm run lint || echo "WARNING - Lint check failed but workflow continues"
-
   test:
-    # removed dependency on lint job
-    # needs: lint
     runs-on: ubuntu-latest
+    
     steps:
     - uses: actions/checkout@v3
-
+    
     - name: Use Node.js 18
       uses: actions/setup-node@v3
       with:
         node-version: 18
-        cache: 'npm'
-
-    - name: Set registry to faster mirror
-      run: npm config set registry https://registry.npmmirror.com
-
+    
+    - name: Cache Node.js modules
+      uses: actions/cache@v3
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+    
     - name: Install dependencies
       run: npm ci
-
+      
     - name: Run tests
       run: npm test
-
-    # Test coverage report
-    - name: Generate test coverage report
-      run: npm test -- --coverage || echo "WARNING - Coverage report generation failed but workflow continues"
-
-  # security-scan job commented out to speed up workflow
-  # security-scan:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v3
-  #
-  #   - name: Run npm audit
-  #     run: npm audit --production || echo "WARNING - Security scan found issues but workflow continues"
-  #
-  #   # Optional: Use Snyk for dependency security scanning
-  #   - name: Run Snyk to check for vulnerabilities
-  #     uses: snyk/actions/node@master
-  #     continue-on-error: true
-  #     env:
-  #       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-  #     with:
-  #       args: --severity-threshold=high
-
+      
   build-and-push:
-    needs: [test] # removed dependency on security-scan job
+    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+    
     steps:
     - uses: actions/checkout@v3
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-      with:
-        driver-opts: |
-          image=registry.cn-hangzhou.aliyuncs.com/docker_mirror/buildkit:master
-
-    # 使用阿里云镜像加速
-    - name: Set up Docker mirror
-      run: |
-        echo '{"registry-mirrors": ["https://registry.cn-hangzhou.aliyuncs.com"]}' | sudo tee /etc/docker/daemon.json
-        sudo systemctl restart docker
-
+    
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
-    # Generate version tag
-    - name: Generate version tag
-      id: version
-      run: |
-        echo "tag=$(date +'%Y%m%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
+    
     - name: Build and push
       uses: docker/build-push-action@v3
       with:
         push: true
-        tags: |
-          gosuquan/node-test:latest
-          gosuquan/node-test:${{ steps.version.outputs.tag }}
+        tags: gosuquan/node-test:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        build-args: |
-          NODE_ENV=production
-        # 使用阿里云镜像加速构建
-        build-contexts: |
-          docker-image://node=registry.cn-hangzhou.aliyuncs.com/docker_mirror/node:18-alpine
-
+    
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    
     steps:
-    - name: Deploy to production
+    - name: SSH into server and deploy
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          # Pull latest Docker image
           docker pull gosuquan/node-test:latest
-          
-          # Gracefully stop old container
           docker stop node-test || true
           docker rm node-test || true
-          
-          # Start new container
           docker run -d \
             --name node-test \
             --restart unless-stopped \
@@ -151,29 +77,4 @@ jobs:
             -e DB_HOST=${{ secrets.DB_HOST }} \
             -e DB_USER=${{ secrets.DB_USER }} \
             -e DB_PASS=${{ secrets.DB_PASS }} \
-            -v /var/log/node-app:/usr/src/app/logs \
-            --health-cmd="curl -f http://localhost:3000/health || exit 1" \
-            --health-interval=30s \
-            --health-retries=3 \
             gosuquan/node-test:latest
-          
-          # Check if container is running successfully
-          sleep 10
-          docker ps | grep node-test
-          
-          # Clean up old images
-          docker image prune -af --filter "until=24h"
-
-  notify:
-    needs: [deploy]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-    - name: Notify deployment status
-      uses: rtCamp/action-slack-notify@v2
-      env:
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        SLACK_CHANNEL: deployments
-        SLACK_COLOR: ${{ needs.deploy.result == 'success' && 'good' || 'danger' }}
-        SLACK_TITLE: "Deployment Status: ${{ needs.deploy.result == 'success' && 'SUCCESS ✅' || 'FAILED ❌' }}"
-        SLACK_MESSAGE: "Application deployed to production - Version: $(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
