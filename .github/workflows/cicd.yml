@@ -79,7 +79,7 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        script: |
+        script: |2
           # 检查 Docker 是否安装
           if ! command -v docker &> /dev/null; then
             echo "Docker 未安装，正在安装..."
@@ -96,10 +96,38 @@ jobs:
             newgrp docker
           fi
           
-          # 部署应用
-          docker pull gosuquan/node-test:latest
+          # 配置 Docker 使用国内镜像源
+          echo "配置 Docker 镜像加速..."
+          sudo mkdir -p /etc/docker
+          echo '{"registry-mirrors":["https://registry.docker-cn.com","https://hub-mirror.c.163.com","https://mirror.baidubce.com"]}' | sudo tee /etc/docker/daemon.json
+          
+          # 重启 Docker 服务
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+          
+          # 部署应用，使用更简单的方式处理网络问题
+          echo "拉取 Docker 镜像..."
+          # 设置更长的超时时间并使用国内镜像
+          docker pull registry.cn-hangzhou.aliyuncs.com/gosuquan/node-test:latest || docker pull gosuquan/node-test:latest || true
+          
+          # 如果拉取失败，使用本地镜像或构建新镜像
+          if ! docker images | grep -q 'gosuquan/node-test'; then
+            echo "镜像拉取失败，使用本地构建..."
+            mkdir -p ~/app && cd ~/app
+            # 如果已有代码，尝试更新，否则克隆
+            if [ -d ".git" ]; then
+              git pull
+            else
+              git clone https://github.com/GosuQuan/From-0-to-1-Enterprise-level-High-Availability-Node.js-Server.git .
+            fi
+            docker build -t gosuquan/node-test:latest .
+          fi
+          
+          echo "停止并移除旧容器..."
           docker stop node-test || true
           docker rm node-test || true
+          
+          echo "启动新容器..."
           docker run -d \
             --name node-test \
             --restart unless-stopped \
@@ -107,3 +135,6 @@ jobs:
             -e NODE_ENV=production \
             -e DB_HOST=${{ secrets.DB_HOST }} \
             gosuquan/node-test:latest
+          
+          echo "部署完成！"
+          docker ps | grep node-test
