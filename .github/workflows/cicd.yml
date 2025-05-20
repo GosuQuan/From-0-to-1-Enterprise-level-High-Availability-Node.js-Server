@@ -72,14 +72,42 @@ jobs:
       - name: Generate timestamp for unique filename
         id: timestamp
         run: echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
-      - name: Upload Docker image tar to server (with unique name)
+      # 创建一个临时目录来存放上传文件
+      - name: Prepare server for upload (create temp directory)
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 创建一个临时目录
+            mkdir -p ~/app/temp
+            # 清理旧文件
+            rm -rf ~/app/*.tar
+            rm -rf ~/app/temp/*
+      # 上传到临时目录
+      - name: Upload Docker image tar to server
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "node-test.tar"
-          target: "~/app/node-test-${{ steps.timestamp.outputs.timestamp }}.tar"
+          target: "~/app/temp/"
+      # 将上传的文件移动到最终位置
+      - name: Move uploaded file to final location
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # 检查上传的文件
+            ls -la ~/app/temp/
+            # 移动到最终位置
+            mv ~/app/temp/node-test.tar ~/app/node-test-${{ steps.timestamp.outputs.timestamp }}.tar
+            # 确认移动成功
+            ls -la ~/app/
       # 可选：推送到 Docker Hub 作为备份
       - name: Push Docker image
         uses: docker/build-push-action@v3
@@ -104,43 +132,37 @@ jobs:
             mkdir -p ~/app
             cd ~/app
             
-            # 列出目录中所有文件（调试用）
-            echo "当前目录内容:"
+            # 显示目录内容（调试用）
+            echo "目录内容:"
             ls -la
             
-            # 先检查新格式文件 (node-test-*.tar)
-            echo "尝试查找新格式 tar 文件..."
-            NEW_FORMAT_TAR=$(ls -t node-test-*.tar 2>/dev/null | head -n 1 || echo "")
+            # 查找最新的 tar 文件 (按时间排序)
+            echo "查找最新的 tar 文件..."
+            TAR_FILES=$(find . -maxdepth 1 -name "node-test-*.tar" -type f | sort -r)
             
-            # 再检查旧格式文件 (node-test.tar)
-            echo "尝试查找旧格式 tar 文件..."
-            if [ -f "node-test.tar" ]; then
-              OLD_FORMAT_TAR="node-test.tar"
-              echo "找到旧格式 tar 文件: $OLD_FORMAT_TAR"
-            else
-              OLD_FORMAT_TAR=""
-              echo "未找到旧格式 tar 文件"
-            fi
-            
-            # 决定使用哪个 tar 文件
-            if [ ! -z "$NEW_FORMAT_TAR" ]; then
-              LATEST_TAR="$NEW_FORMAT_TAR"
-              echo "使用新格式 tar 文件: $LATEST_TAR"
-            elif [ ! -z "$OLD_FORMAT_TAR" ]; then
-              LATEST_TAR="$OLD_FORMAT_TAR"
-              echo "使用旧格式 tar 文件: $LATEST_TAR"
-            else
-              echo "错误: 找不到任何 tar 文件！"
+            if [ -z "$TAR_FILES" ]; then
+              echo "错误: 未找到任何 tar 文件！"
               exit 1
             fi
             
-            # 再次确认文件存在且是普通文件
+            # 获取第一个（最新的）tar 文件
+            LATEST_TAR=$(echo "$TAR_FILES" | head -n 1)
+            LATEST_TAR=$(basename "$LATEST_TAR")
+            
+            echo "找到最新的 tar 文件: $LATEST_TAR"
+            
+            # 确认文件存在且是普通文件
             if [ ! -f "$LATEST_TAR" ]; then
-              echo "错误: $LATEST_TAR 不是普通文件或不存在！实际情况如下:"
-              ls -la "$LATEST_TAR" 2>&1 || echo "文件不存在"
-              file "$LATEST_TAR" 2>&1 || echo "无法获取文件类型"
+              echo "错误: $LATEST_TAR 不是普通文件！"
+              ls -la "$LATEST_TAR"
+              file "$LATEST_TAR" 2>/dev/null || echo "无法获取文件类型"
               exit 1
             fi
+            
+            # 显示文件信息
+            echo "tar 文件信息:"
+            ls -lh "$LATEST_TAR"
+            file "$LATEST_TAR"
             
             echo "$LATEST_TAR 文件类型如下:"
             ls -l "$LATEST_TAR"
