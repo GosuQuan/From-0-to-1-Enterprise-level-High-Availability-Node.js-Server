@@ -33,12 +33,12 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/package.json') }}
         restore-keys: |
           ${{ runner.os }}-pnpm-store-
     
     - name: Install dependencies
-      run: pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
+      run: pnpm install --no-frozen-lockfile --registry=https://registry.npmmirror.com
       
     # - name: Run tests
     #   run: pnpm test
