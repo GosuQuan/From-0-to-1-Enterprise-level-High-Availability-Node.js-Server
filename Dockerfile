@@ -3,6 +3,9 @@ FROM node:18-alpine AS builder
 
 WORKDIR /usr/src/app
 
+# 安装编译工具和依赖
+RUN apk add --no-cache python3 make g++ gcc
+
 # 安装pnpm
 RUN npm install -g pnpm
 
@@ -22,6 +25,9 @@ COPY . .
 FROM node:18-alpine
 
 WORKDIR /usr/src/app
+
+# 安装生产环境必要的包
+RUN apk add --no-cache python3 make g++ gcc
 
 # 安装pnpm和必要的全局依赖
 RUN npm install -g pnpm cross-env
