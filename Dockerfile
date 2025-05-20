@@ -3,14 +3,17 @@ FROM node:18-alpine AS builder
 
 WORKDIR /usr/src/app
 
+# 安装pnpm
+RUN npm install -g pnpm
+
 # 复制package.json和package-lock.json
 COPY package*.json ./
 
-# 设置npm镜像源以加速安装
-RUN npm config set registry https://registry.npmmirror.com
+# 设置pnpm镜像源以加速安装
+RUN pnpm config set registry https://registry.npmmirror.com
 
 # 安装依赖
-RUN npm ci
+RUN pnpm install --no-frozen-lockfile
 
 # 复制源代码
 COPY . .
@@ -19,6 +22,9 @@ COPY . .
 FROM node:18-alpine
 
 WORKDIR /usr/src/app
+
+# 安装pnpm
+RUN npm install -g pnpm
 
 # 设置环境变量
 ENV NODE_ENV=production
@@ -33,4 +39,4 @@ COPY --from=builder /usr/src/app/scripts ./scripts
 EXPOSE 3000
 
 # 启动应用
-CMD ["npm", "run", "start:prod"]
+CMD ["pnpm", "run", "start:prod"]
