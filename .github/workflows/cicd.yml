@@ -53,22 +53,33 @@ jobs:
         run: docker build -t gosuquan/node-test:latest .
       - name: Save Docker image as tar
         run: docker save -o node-test.tar gosuquan/node-test:latest
-      - name: Remove old tar on server (if any)
+      - name: Prepare server for upload (thorough cleanup)
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            rm -rf ~/app/node-test.tar
-      - name: Upload Docker image tar to server
+            # 强制创建应用目录
+            mkdir -p ~/app
+            # 强力清理旧文件和目录
+            rm -rf ~/app/node-test.tar*
+            rm -rf ~/app/node-test-*.tar
+            # 确认清理成功
+            ls -la ~/app/
+            echo '服务器环境已准备就绪，可以上传文件'
+      # 使用带时间戳的临时文件名避免冲突
+      - name: Generate timestamp for unique filename
+        id: timestamp
+        run: echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
+      - name: Upload Docker image tar to server (with unique name)
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           source: "node-test.tar"
-          target: "~/app/node-test.tar"
+          target: "~/app/node-test-${{ steps.timestamp.outputs.timestamp }}.tar"
       # 可选：推送到 Docker Hub 作为备份
       - name: Push Docker image
         uses: docker/build-push-action@v3
@@ -92,23 +103,56 @@ jobs:
             # 进入应用目录
             mkdir -p ~/app
             cd ~/app
-            # 检查 node-test.tar 必须为普通文件
-            if [ ! -f node-test.tar ]; then
-              echo '错误: node-test.tar 不是普通文件！实际类型如下：'
-              ls -l node-test.tar
-              file node-test.tar
+            
+            # 找到最新的 tar 文件
+            LATEST_TAR=$(ls -t node-test-*.tar 2>/dev/null | head -n 1)
+            
+            # 检查是否找到 tar 文件
+            if [ -z "$LATEST_TAR" ]; then
+              echo '错误: 找不到 node-test-*.tar 文件！'
+              ls -la ~/app/
               exit 1
             fi
-            echo 'node-test.tar 文件类型如下：'
-            ls -l node-test.tar
-            file node-test.tar
+            
+            echo "找到最新的 tar 文件: $LATEST_TAR"
+            
+            # 检查文件类型
+            if [ ! -f "$LATEST_TAR" ]; then
+              echo "错误: $LATEST_TAR 不是普通文件！实际类型如下:"
+              ls -l "$LATEST_TAR"
+              file "$LATEST_TAR"
+              exit 1
+            fi
+            
+            echo "$LATEST_TAR 文件类型如下:"
+            ls -l "$LATEST_TAR"
+            file "$LATEST_TAR"
+            
             # 导入镜像
-            docker load -i node-test.tar
+            echo "正在导入 Docker 镜像..."
+            docker load -i "$LATEST_TAR"
+            
             # 清理旧容器
+            echo "清理旧容器..."
             docker stop node-test || true
             docker rm node-test || true
+            
             # 运行新容器
+            echo "启动新容器..."
             docker run -d --name node-test --restart unless-stopped -p 3000:3000 -e NODE_ENV=production -e DB_HOST=${{ secrets.DB_HOST }} gosuquan/node-test:latest
+            
             # 验证
-            docker ps
-            curl -I http://localhost:3000 || true
+            echo "容器状态:"
+            docker ps | grep node-test
+            
+            # 等待应用启动
+            echo "等待应用启动 (10秒)..."
+            sleep 10
+            
+            # 检查应用是否响应
+            echo "检查应用响应:"
+            curl -I http://localhost:3000 || echo "警告: 应用可能未完全启动，请检查日志"
+            
+            # 显示容器日志
+            echo "容器日志 (最近 20 行):"
+            docker logs --tail 20 node-test
