@@ -25,8 +25,13 @@ const config = {
     },
 
     db: {
-      dialect: 'sqlite',
-      storage: ':memory:',
+      // 在容器环境中使用内存存储代替 SQLite
+      dialect: process.env.CONTAINER_ENV ? 'memory' : 'sqlite',
+      storage: process.env.CONTAINER_ENV ? null : ':memory:',
+      // 自动同步数据库模型，创建表结构
+      sync: { force: true },
+      // 禁用日志输出
+      logging: false,
       define: {
         underscored: true,
       },
