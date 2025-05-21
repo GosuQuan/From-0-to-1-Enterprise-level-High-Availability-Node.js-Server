@@ -3,17 +3,21 @@ FROM node:18
 
 WORKDIR /usr/src/app
 
-# 安装 pnpm 和 cross-env
-RUN npm install -g pnpm cross-env
+# 安装编译工具和依赖
+RUN apt-get update && apt-get install -y python3 make g++ \
+    && npm install -g pnpm cross-env node-gyp
 
 # 设置镜像源
 RUN pnpm config set registry https://registry.npmmirror.com
 
-# 复制应用文件
-COPY . .
+# 先复制 package.json 和 pnpm-lock.yaml (如果存在)
+COPY package.json pnpm-lock.yaml* ./
 
-# 安装依赖，跳过 SQLite3 等原生模块
-RUN pnpm install --no-frozen-lockfile --ignore-scripts
+# 安装依赖
+RUN pnpm install --no-frozen-lockfile
+
+# 复制其余应用文件
+COPY . .
 
 # 设置环境变量
 ENV NODE_ENV=production
